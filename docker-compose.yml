@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: kulsetudb
+    environment:
+      POSTGRES_DB: kulsetudb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - kulnetwork
+
+  backend:
+    build: .
+    container_name: kulbackend
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=kulsetudb
+      - DB_USER=postgres
+      - DB_PASSWORD=password
+    networks:
+      - kulnetwork
+
+volumes:
+  postgres_data:
+
+networks:
+  kulnetwork:
+    driver: bridge
