@@ -1,0 +1,14 @@
+Metadata-Version: 2.1
+Name: python3-distutils
+Version: 0.0.1
+Summary: Safe PoC dummy package demonstrating dependency confusion.
+Home-page: https://github.com/cygut7
+Author: cygut7
+Author-email: cygut7@example.com
+Classifier: Programming Language :: Python :: 3
+Requires-Python: >=3.6
+Description-Content-Type: text/markdown
+
+# python3-distutils
+This is a safe PoC package demonstrating dependency confusion.
+Claimed by cygut7.
