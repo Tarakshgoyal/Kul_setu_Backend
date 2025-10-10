@@ -465,8 +465,16 @@ class FamilySearchEngine:
             return ml_results     
         return []
 
-# Initialize search engine after database is initialized
+# Initialize search engine 
 search_engine = None
+
+def get_search_engine():
+    """Get or initialize the search engine"""
+    global search_engine
+    if search_engine is None:
+        print("Initializing search engine...")
+        search_engine = FamilySearchEngine()
+    return search_engine
 
 @app.route('/search', methods=['POST'])
 def search_families():
@@ -476,11 +484,14 @@ def search_families():
         
         print(f"Search Query: {clean_query}")
         
+        # Get or initialize search engine
+        engine = get_search_engine()
+        
         # Refresh data from database before search
-        search_engine.refresh_data()
+        engine.refresh_data()
         
         # Perform search
-        results = search_engine.search(clean_query)
+        results = engine.search(clean_query)
         
         # Map database column names to frontend field names
         mapped_results = []
@@ -610,11 +621,12 @@ def initialize_database():
 def get_stats():
     """Get database statistics"""
     try:
-        search_engine.refresh_data()
+        engine = get_search_engine()
+        engine.refresh_data()
         stats = {
-            'total_members': len(search_engine.family_members),
-            'total_families': len(search_engine.family_map),
-            'families': {fid: len(members) for fid, members in search_engine.family_map.items()}
+            'total_members': len(engine.family_members),
+            'total_families': len(engine.family_map),
+            'families': {fid: len(members) for fid, members in engine.family_map.items()}
         }
         return jsonify(stats)
     except Exception as e:
@@ -625,11 +637,12 @@ def reload_csv():
     """Reload CSV data into database"""
     try:
         load_csv_data()
-        search_engine.refresh_data()
-        search_engine.prepare_ml_features()
+        engine = get_search_engine()
+        engine.refresh_data()
+        engine.prepare_ml_features()
         return jsonify({
             'success': True, 
-            'message': f'Successfully reloaded {len(search_engine.family_members)} members from CSV'
+            'message': f'Successfully reloaded {len(engine.family_members)} members from CSV'
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
