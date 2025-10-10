@@ -1,27 +1,56 @@
+#!/usr/bin/env python3
+"""
+Test script to verify external database connection
+"""
 import psycopg2
+from psycopg2 import sql
 
-# Test different connection parameters
-configs = [
-    {"host": "127.0.0.1", "port": "5434", "user": "postgres", "database": "postgres"},
-    {"host": "127.0.0.1", "port": "5434", "user": "postgres", "password": "password", "database": "postgres"},
-    {"host": "localhost", "port": "5434", "user": "postgres", "database": "postgres"},
-    {"host": "localhost", "port": "5434", "user": "postgres", "password": "password", "database": "postgres"},
-]
+# Database connection parameters
+DATABASE_URL = "postgresql://kul_setu_db_user:5xvepfwEtYa0Bzx89vyTiTnUqkJWG437@dpg-d3kjv2ffte5s738ehdh0-a.oregon-postgres.render.com/kul_setu_db"
 
-for i, config in enumerate(configs):
+def test_connection():
+    """Test database connection and basic operations"""
     try:
-        print(f"Testing config {i+1}: {config}")
-        conn = psycopg2.connect(**config)
+        print("Testing database connection...")
+        
+        # Connect to database
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = True
         cur = conn.cursor()
-        cur.execute("SELECT 1")
-        result = cur.fetchone()
-        print(f"Success: {result}")
+        
+        print("✅ Successfully connected to external database!")
+        
+        # Test basic query
+        cur.execute("SELECT version();")
+        version = cur.fetchone()[0]
+        print(f"PostgreSQL version: {version}")
+        
+        # Check if family_members table exists
+        cur.execute("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_name = 'family_members'
+            );
+        """)
+        
+        table_exists = cur.fetchone()[0]
+        print(f"family_members table exists: {table_exists}")
+        
+        if table_exists:
+            # Count records in table
+            cur.execute("SELECT COUNT(*) FROM family_members;")
+            count = cur.fetchone()[0]
+            print(f"Records in family_members table: {count}")
+        
         cur.close()
         conn.close()
-        print(f"Working config: {config}")
-        break
+        print("✅ Database test completed successfully!")
+        
     except Exception as e:
-        print(f"Failed: {e}")
-        continue
-else:
-    print("All configurations failed")
+        print(f"❌ Database connection failed: {e}")
+        return False
+    
+    return True
+
+if __name__ == "__main__":
+    test_connection()
