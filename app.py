@@ -287,32 +287,52 @@ def register_member():
 
 class FamilySearchEngine:
     def __init__(self):
-        self.refresh_data()
-        self.prepare_ml_features()
-    
-    def refresh_data(self):
-        """Load data from PostgreSQL database"""
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        
-        cur.execute('SELECT * FROM family_members')
-        self.family_members = cur.fetchall()
-        
-        cur.close()
-        conn.close()
-        
-        # Create lookup maps
-        self.person_map = {member['person_id']: member for member in self.family_members}
+        self.family_members = []
+        self.person_map = {}
         self.family_map = defaultdict(list)
         self.father_children_map = defaultdict(list)
         self.mother_children_map = defaultdict(list)
+        self.vectorizer = None
+        self.tfidf_matrix = None
         
-        for member in self.family_members:
-            self.family_map[member['family_line_id']].append(member)
-            if member.get('father_id'):
-                self.father_children_map[member['father_id']].append(member)
-            if member.get('mother_id'):
-                self.mother_children_map[member['mother_id']].append(member)
+        try:
+            self.refresh_data()
+            self.prepare_ml_features()
+        except Exception as e:
+            print(f"Warning: Failed to initialize search engine data: {e}")
+            print("Search engine initialized with empty data. Use /init-db to populate.")
+    
+    def refresh_data(self):
+        """Load data from PostgreSQL database"""
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            
+            cur.execute('SELECT * FROM family_members')
+            self.family_members = cur.fetchall()
+            
+            cur.close()
+            conn.close()
+            
+            # Create lookup maps
+            self.person_map = {member['person_id']: member for member in self.family_members}
+            self.family_map = defaultdict(list)
+            self.father_children_map = defaultdict(list)
+            self.mother_children_map = defaultdict(list)
+            
+            for member in self.family_members:
+                self.family_map[member['family_line_id']].append(member)
+                if member.get('father_id'):
+                    self.father_children_map[member['father_id']].append(member)
+                if member.get('mother_id'):
+                    self.mother_children_map[member['mother_id']].append(member)
+        except Exception as e:
+            print(f"Error refreshing data: {e}")
+            self.family_members = []
+            self.person_map = {}
+            self.family_map = defaultdict(list)
+            self.father_children_map = defaultdict(list)
+            self.mother_children_map = defaultdict(list)
     
     def prepare_ml_features(self):
         """Prepare text features for ML-based similarity search"""
@@ -330,6 +350,7 @@ class FamilySearchEngine:
                 self.vectorizer = TfidfVectorizer(ngram_range=(1, 2))
                 self.tfidf_matrix = self.vectorizer.fit_transform(self.text_features or ['empty'])
         else:
+            print("No text features available - ML search will be disabled")
             self.vectorizer = None
             self.tfidf_matrix = None
     
@@ -511,22 +532,93 @@ def search_families():
     
     except Exception as e:
         print(f"Search error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        # Return empty array instead of error object to prevent frontend crashes
+        return jsonify([]), 500
+
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({'message': 'Kul Setu Backend API', 'status': 'running', 'version': '1.0'})
 
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({'status': 'OK', 'message': 'Kul Setu ML Search Backend is running'})
 
+@app.route('/init-db', methods=['POST'])
+def initialize_database():
+    """Initialize database and load sample data if CSV is not available"""
+    try:
+        # First try to initialize the database
+        init_db()
+        
+        # Try to load CSV data
+        csv_loaded = load_csv_data()
+        
+        # If CSV loading failed, create some sample data
+        if not csv_loaded:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Check if table is empty
+            cur.execute('SELECT COUNT(*) FROM family_members')
+            count = cur.fetchone()[0]
+            
+            if count == 0:
+                # Insert sample data
+                sample_data = [
+                    ('SAMPLE001', 'F01', 1, 'John Doe', 'M', 'European', None, None, 'SAMPLE002', 'ANCS001', 
+                     '1990-01-01', None, None, None, None, 'Brown', 'Black', 'Light', 'O+', 'No', 'No', 'No', 
+                     None, 'No', 'No', 'No', 'No', 'No', 'No', 'Friendly', 'Italian', 'Christmas Traditions', 
+                     'New York', None, 'Middle', 'Bachelor'),
+                    ('SAMPLE002', 'F01', 1, 'Jane Smith', 'F', 'European', None, None, 'SAMPLE001', 'ANCS001',
+                     '1992-03-15', None, None, None, None, 'Blue', 'Blonde', 'Light', 'A+', 'No', 'No', 'No',
+                     None, 'No', 'No', 'No', 'No', 'No', 'No', 'Kind', 'French', 'New Year Traditions',
+                     'California', None, 'Middle', 'Master')
+                ]
+                
+                for data in sample_data:
+                    cur.execute('''
+                        INSERT INTO family_members (
+                            person_id, family_line_id, generation, first_name, gender, ethnicity,
+                            mother_id, father_id, spouse_id, shared_ancestry_key, dob, dod,
+                            longevity_avg_lifespan, generation_avg_lifespan, cause_of_death,
+                            eye_color, hair_color, skin_tone, blood_group, birthmark, freckles,
+                            baldness, beard_style_trend, condition_diabetes, condition_heart_issue,
+                            condition_asthma, condition_color_blindness, left_handed, is_twin,
+                            nature_of_person, recipes_cuisine, family_traditions, native_location,
+                            migration_path, socioeconomic_status, education_level
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ''', data)
+                
+                conn.commit()
+                message = "Database initialized with sample data"
+            else:
+                message = f"Database already contains {count} records"
+            
+            cur.close()
+            conn.close()
+        else:
+            message = "Database initialized and CSV data loaded successfully"
+        
+        return jsonify({'success': True, 'message': message})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/stats', methods=['GET'])
 def get_stats():
     """Get database statistics"""
-    search_engine.refresh_data()
-    stats = {
-        'total_members': len(search_engine.family_members),
-        'total_families': len(search_engine.family_map),
-        'families': {fid: len(members) for fid, members in search_engine.family_map.items()}
-    }
-    return jsonify(stats)
+    try:
+        search_engine.refresh_data()
+        stats = {
+            'total_members': len(search_engine.family_members),
+            'total_families': len(search_engine.family_map),
+            'families': {fid: len(members) for fid, members in search_engine.family_map.items()}
+        }
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e), 'total_members': 0, 'total_families': 0}), 500
 
 @app.route('/reload-csv', methods=['POST'])
 def reload_csv():
@@ -554,22 +646,22 @@ if __name__ == '__main__':
         print("Initializing PostgreSQL database...")
         init_db()
         
-        print("Loading CSV data...")
-        csv_success = load_csv_data()
-        if csv_success:
-            print("✅ CSV data loaded successfully!")
-        else:
-            print("⚠️ CSV loading failed, but continuing...")
+        print("Skipping CSV loading on startup (will load on demand)")
+        print("You can initialize database with sample data by calling: /init-db")
         
         print("Initializing search engine...")
         search_engine = FamilySearchEngine()
         
-        print(f"Database connected: {len(search_engine.family_members)} members loaded")
+        print(f"Database ready: {len(search_engine.family_members)} members currently loaded")
         print(f"Families: {len(search_engine.family_map)}")
+        
+        if len(search_engine.family_members) == 0:
+            print("⚠️  No data loaded. Call POST /init-db to initialize with sample data.")
         
         print("🚀 Starting Flask server on http://127.0.0.1:5000")
         app.run(debug=True, host='127.0.0.1', port=5000)
         
     except Exception as e:
         print(f"❌ Failed to start backend: {e}")
-        print("You can try running 'python app_simple.py' to test basic connectivity")
+        import traceback
+        traceback.print_exc()
