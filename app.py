@@ -209,10 +209,136 @@ def load_csv_data():
 
 def generate_id():
     return str(uuid.uuid4())[:8].upper()
-@app.route('/register', methods=['POST'])
-def register_member():
+
+def validate_alive_member(data):
+    """Validate data for alive family member"""
+    required_fields = ['firstName', 'gender', 'generation', 'dob']
+    for field in required_fields:
+        if not data.get(field):
+            return False, f"Required field missing: {field}"
+    
+    # Validate that DOD is not provided for alive members
+    if data.get('dod'):
+        return False, "Date of death should not be provided for alive members"
+    
+    # Validate that cause of death is not provided for alive members
+    if data.get('causeOfDeath'):
+        return False, "Cause of death should not be provided for alive members"
+    
+    return True, ""
+
+def validate_dead_member(data):
+    """Validate data for deceased family member"""
+    required_fields = ['firstName', 'gender', 'generation', 'dob', 'dod', 'causeOfDeath']
+    for field in required_fields:
+        if not data.get(field):
+            return False, f"Required field missing: {field}"
+    
+    # Validate that DOD is after DOB
+    try:
+        dob = parse_date(data.get('dob'))
+        dod = parse_date(data.get('dod'))
+        if dob and dod and dod <= dob:
+            return False, "Date of death must be after date of birth"
+    except:
+        return False, "Invalid date format"
+    
+    return True, ""
+
+@app.route('/register/alive', methods=['POST'])
+def register_alive_member():
+    """Register a living family member"""
     try:
         data = request.get_json()
+        
+        # Validate alive member data
+        is_valid, error_msg = validate_alive_member(data)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
+        
+        # Generate IDs if not provided
+        person_id = data.get('personId') or generate_id()
+        family_line_id = data.get('familyLineId') or generate_id()
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # For alive members, DOD and cause_of_death should be NULL
+        cur.execute('''
+            INSERT INTO family_members (
+                person_id, family_line_id, generation, first_name, gender, ethnicity,
+                mother_id, father_id, spouse_id, shared_ancestry_key, dob, dod,
+                longevity_avg_lifespan, generation_avg_lifespan, cause_of_death,
+                eye_color, hair_color, skin_tone, blood_group, birthmark, freckles,
+                baldness, beard_style_trend, condition_diabetes, condition_heart_issue,
+                condition_asthma, condition_color_blindness, left_handed, is_twin,
+                nature_of_person, recipes_cuisine, family_traditions, native_location,
+                migration_path, socioeconomic_status, education_level
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            person_id,
+            family_line_id,
+            data['generation'],
+            data['firstName'],
+            data['gender'],
+            data.get('ethnicity'),
+            data.get('motherId'),
+            data.get('fatherId'),
+            data.get('spouseId'),
+            data.get('sharedAncestryKey'),
+            parse_date(data.get('dob')),
+            None,  # DOD is NULL for alive members
+            parse_decimal(data.get('longevityAvgLifespan')),
+            parse_decimal(data.get('generationAvgLifespan')),
+            None,  # Cause of death is NULL for alive members
+            data.get('eyeColor'),
+            data.get('hairColor'),
+            data.get('skinTone'),
+            data.get('bloodGroup'),
+            data.get('birthmark'),
+            data.get('freckles'),
+            data.get('baldness'),
+            data.get('beardStyleTrend'),
+            data.get('conditionDiabetes'),
+            data.get('conditionHeartIssue'),
+            data.get('conditionAsthma'),
+            data.get('conditionColorBlindness'),
+            data.get('leftHanded'),
+            data.get('isTwin'),
+            data.get('natureOfPerson'),
+            data.get('recipesCuisine'),
+            data.get('familyTraditions'),
+            data.get('nativeLocation'),
+            data.get('migrationPath'),
+            data.get('socioeconomicStatus'),
+            data.get('educationLevel')
+        ))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Living family member registered successfully',
+            'personId': person_id,
+            'familyLineId': family_line_id,
+            'status': 'alive'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/register/dead', methods=['POST'])
+def register_dead_member():
+    """Register a deceased family member"""
+    try:
+        data = request.get_json()
+        
+        # Validate dead member data
+        is_valid, error_msg = validate_dead_member(data)
+        if not is_valid:
+            return jsonify({'success': False, 'error': error_msg}), 400
         
         # Generate IDs if not provided
         person_id = data.get('personId') or generate_id()
@@ -248,10 +374,10 @@ def register_member():
             parse_decimal(data.get('longevityAvgLifespan')),
             parse_decimal(data.get('generationAvgLifespan')),
             data.get('causeOfDeath'),
-            data['eyeColor'],
+            data.get('eyeColor'),
             data.get('hairColor'),
             data.get('skinTone'),
-            data['bloodGroup'],
+            data.get('bloodGroup'),
             data.get('birthmark'),
             data.get('freckles'),
             data.get('baldness'),
@@ -262,7 +388,7 @@ def register_member():
             data.get('conditionColorBlindness'),
             data.get('leftHanded'),
             data.get('isTwin'),
-            data['natureOfPerson'],
+            data.get('natureOfPerson'),
             data.get('recipesCuisine'),
             data.get('familyTraditions'),
             data.get('nativeLocation'),
@@ -277,13 +403,111 @@ def register_member():
         
         return jsonify({
             'success': True,
-            'message': 'Family member registered successfully',
+            'message': 'Deceased family member registered successfully',
             'personId': person_id,
-            'familyLineId': family_line_id
+            'familyLineId': family_line_id,
+            'status': 'deceased'
         })
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/register', methods=['POST'])
+def register_member():
+    """Legacy registration endpoint - redirects to appropriate specific endpoint"""
+    try:
+        data = request.get_json()
+        
+        # Check if member is alive or dead based on provided data
+        if data.get('dod') or data.get('causeOfDeath'):
+            # Has death information, treat as deceased
+            return register_dead_member()
+        else:
+            # No death information, treat as alive
+            return register_alive_member()
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/register/schema', methods=['GET'])
+def get_registration_schema():
+    """Get registration form schema for both alive and dead members"""
+    return jsonify({
+        'alive': {
+            'required_fields': ['firstName', 'gender', 'generation', 'dob'],
+            'optional_fields': [
+                'ethnicity', 'motherId', 'fatherId', 'spouseId', 'sharedAncestryKey',
+                'longevityAvgLifespan', 'generationAvgLifespan', 'eyeColor', 'hairColor',
+                'skinTone', 'bloodGroup', 'birthmark', 'freckles', 'baldness',
+                'beardStyleTrend', 'conditionDiabetes', 'conditionHeartIssue',
+                'conditionAsthma', 'conditionColorBlindness', 'leftHanded', 'isTwin',
+                'natureOfPerson', 'recipesCuisine', 'familyTraditions', 'nativeLocation',
+                'migrationPath', 'socioeconomicStatus', 'educationLevel'
+            ],
+            'excluded_fields': ['dod', 'causeOfDeath'],
+            'validation_rules': {
+                'dob': 'Must be a valid date in DD-MM-YYYY format',
+                'dod': 'Should NOT be provided for alive members',
+                'causeOfDeath': 'Should NOT be provided for alive members'
+            }
+        },
+        'dead': {
+            'required_fields': ['firstName', 'gender', 'generation', 'dob', 'dod', 'causeOfDeath'],
+            'optional_fields': [
+                'ethnicity', 'motherId', 'fatherId', 'spouseId', 'sharedAncestryKey',
+                'longevityAvgLifespan', 'generationAvgLifespan', 'eyeColor', 'hairColor',
+                'skinTone', 'bloodGroup', 'birthmark', 'freckles', 'baldness',
+                'beardStyleTrend', 'conditionDiabetes', 'conditionHeartIssue',
+                'conditionAsthma', 'conditionColorBlindness', 'leftHanded', 'isTwin',
+                'natureOfPerson', 'recipesCuisine', 'familyTraditions', 'nativeLocation',
+                'migrationPath', 'socioeconomicStatus', 'educationLevel'
+            ],
+            'validation_rules': {
+                'dob': 'Must be a valid date in DD-MM-YYYY format',
+                'dod': 'Must be a valid date in DD-MM-YYYY format and after DOB',
+                'causeOfDeath': 'Must specify cause of death for deceased members'
+            }
+        },
+        'field_options': {
+            'gender': ['M', 'F', 'Other'],
+            'ethnicity': ['East Asian', 'South Asian', 'Western European', 'African', 'Mixed', 'Other'],
+            'bloodGroup': ['A', 'B', 'AB', 'O', 'A+', 'B+', 'AB+', 'O+', 'A-', 'B-', 'AB-', 'O-'],
+            'eyeColor': ['Brown', 'Blue', 'Green', 'Hazel', 'Gray', 'Amber'],
+            'hairColor': ['Black', 'Brown', 'Blonde', 'Red', 'Gray', 'White'],
+            'skinTone': ['Light', 'Medium', 'Dark'],
+            'birthmark': ['None', 'Forehead', 'Cheek', 'Neck', 'Shoulder', 'Back', 'Chest', 'Arm', 'Wrist', 'Hand', 'Thigh', 'Knee', 'Ankle', 'Foot', 'Hip', 'Waist', 'Upper_Back', 'Lower_Back', 'Shin', 'Calf', 'Elbow', 'Forearm', 'Palm', 'Finger', 'Toe', 'Abdomen'],
+            'yesNoFields': ['freckles', 'baldness', 'conditionDiabetes', 'conditionHeartIssue', 'conditionAsthma', 'conditionColorBlindness', 'leftHanded', 'isTwin'],
+            'beardStyleTrend': ['Full Beard', 'Moustache', 'Stubble', 'Clean Shaven', 'Goatee'],
+            'natureOfPerson': ['Aggressive', 'Calm', 'Artistic', 'Extrovert', 'Introvert', 'Spiritual'],
+            'socioeconomicStatus': ['Low', 'Medium', 'High'],
+            'educationLevel': ['High School', 'Bachelor\'s', 'Master\'s', 'PhD'],
+            'causeOfDeath': ['Old Age', 'Accident', 'Infection', 'Heart Disease', 'Cancer', 'Stroke', 'Natural Causes', 'Unknown']
+        }
+    })
+
+@app.route('/register/validate', methods=['POST'])
+def validate_registration_data():
+    """Validate registration data before submission"""
+    try:
+        data = request.get_json()
+        member_type = data.get('type', 'alive')  # Default to alive
+        member_data = data.get('data', {})
+        
+        if member_type == 'alive':
+            is_valid, error_msg = validate_alive_member(member_data)
+        elif member_type == 'dead':
+            is_valid, error_msg = validate_dead_member(member_data)
+        else:
+            return jsonify({'valid': False, 'error': 'Invalid member type. Must be "alive" or "dead"'}), 400
+        
+        return jsonify({
+            'valid': is_valid,
+            'error': error_msg if not is_valid else None,
+            'type': member_type
+        })
+        
+    except Exception as e:
+        return jsonify({'valid': False, 'error': str(e)}), 500
 
 class FamilySearchEngine:
     def __init__(self):
