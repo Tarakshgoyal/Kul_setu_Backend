@@ -84,6 +84,9 @@ def init_db():
             migration_path VARCHAR(200),
             socioeconomic_status VARCHAR(20),
             education_level VARCHAR(50),
+            other_disease VARCHAR(200),
+            passion VARCHAR(100),
+            disability VARCHAR(200),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -148,8 +151,8 @@ def load_csv_data():
                             baldness, beard_style_trend, condition_diabetes, condition_heart_issue,
                             condition_asthma, condition_color_blindness, left_handed, is_twin,
                             nature_of_person, recipes_cuisine, family_traditions, native_location,
-                            migration_path, socioeconomic_status, education_level
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            migration_path, socioeconomic_status, education_level, other_disease, passion, disability
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         row['Person_ID'],
                         row['Family_Line_ID'],
@@ -186,7 +189,10 @@ def load_csv_data():
                         row['Native_Location'],
                         migration_path,
                         row['Socioeconomic_Status'],
-                        row['Education_Level']
+                        row['Education_Level'],
+                        row.get('Other_Disease', None),  # New field, optional in CSV
+                        row.get('Passion', None),  # New field, optional in CSV
+                        row.get('Disability', None)  # New field, optional in CSV
                     ))
                     count += 1
                     if count % 100 == 0:
@@ -273,8 +279,8 @@ def register_alive_member():
                 baldness, beard_style_trend, condition_diabetes, condition_heart_issue,
                 condition_asthma, condition_color_blindness, left_handed, is_twin,
                 nature_of_person, recipes_cuisine, family_traditions, native_location,
-                migration_path, socioeconomic_status, education_level
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                migration_path, socioeconomic_status, education_level, other_disease, passion, disability
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             person_id,
             family_line_id,
@@ -311,7 +317,10 @@ def register_alive_member():
             data.get('nativeLocation'),
             data.get('migrationPath'),
             data.get('socioeconomicStatus'),
-            data.get('educationLevel')
+            data.get('educationLevel'),
+            data.get('otherDisease'),
+            None,  # Passion is NULL for alive members
+            data.get('disability')
         ))
         
         conn.commit()
@@ -320,7 +329,7 @@ def register_alive_member():
         
         return jsonify({
             'success': True,
-            'message': 'Living family member registered successfully',
+            'message': 'Alive family member registered successfully',
             'personId': person_id,
             'familyLineId': family_line_id,
             'status': 'alive'
@@ -356,8 +365,8 @@ def register_dead_member():
                 baldness, beard_style_trend, condition_diabetes, condition_heart_issue,
                 condition_asthma, condition_color_blindness, left_handed, is_twin,
                 nature_of_person, recipes_cuisine, family_traditions, native_location,
-                migration_path, socioeconomic_status, education_level
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                migration_path, socioeconomic_status, education_level, other_disease, passion, disability
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ''', (
             person_id,
             family_line_id,
@@ -394,7 +403,10 @@ def register_dead_member():
             data.get('nativeLocation'),
             data.get('migrationPath'),
             data.get('socioeconomicStatus'),
-            data.get('educationLevel')
+            data.get('educationLevel'),
+            data.get('otherDisease'),
+            data.get('passion'),
+            data.get('disability')
         ))
         
         conn.commit()
