@@ -18,7 +18,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Database configuration - using external Render PostgreSQL
-DATABASE_URL = "postgresql://kul_setu_db_user:5xvepfwEtYa0Bzx89vyTiTnUqkJWG437@dpg-d3kjv2ffte5s738ehdh0-a.oregon-postgres.render.com/kul_setu_db"
+DATABASE_URL = "postgresql://kul_setu_db_u64s_user:QNIomHFakekLB4I2nKPmPAMDAfkMR2jp@dpg-d3muriidbo4c73asequg-a.oregon-postgres.render.com/kul_setu_db_u64s"
 
 def get_db_connection():
     """Get database connection with timeout"""
