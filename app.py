@@ -136,6 +136,7 @@ def load_csv_data():
         print(f"CSV file {csv_file_path} not found!")
         return False
     
+    conn = None
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -143,6 +144,7 @@ def load_csv_data():
         # Clear existing data
         print("Clearing existing data...")
         cur.execute('DELETE FROM family_members')
+        conn.commit()  # Commit the delete operation
         print("Existing data cleared.")
         
         with open(csv_file_path, 'r', encoding='utf-8') as file:
@@ -213,13 +215,15 @@ def load_csv_data():
                     count += 1
                     if count % 100 == 0:
                         print(f"Processed {count} records...")
+                        conn.commit()  # Commit in batches to avoid long transactions
                         
                 except Exception as e:
                     print(f"Error processing row {count + 1}: {e}")
                     print(f"Row data: {row}")
+                    conn.rollback()  # Rollback the failed transaction
                     continue
         
-        conn.commit()
+        conn.commit()  # Final commit for remaining records
         cur.close()
         conn.close()
         print(f"Successfully loaded {count} records from CSV into database")
@@ -231,10 +235,14 @@ def load_csv_data():
         
     except Exception as e:
         print(f"Error loading CSV data: {e}")
+        if conn:
+            conn.rollback()  # Rollback on any error
+            conn.close()
         return False
 
 def sync_users_from_csv():
     """Sync users table with email/password data from CSV"""
+    conn = None
     try:
         print("Syncing users table with CSV email/password data...")
         
@@ -271,7 +279,8 @@ def sync_users_from_csv():
                     ''', (user_id, email, password_hash, first_name, '', family_id, person_id))
                     added_count += 1
                 except Exception as e:
-                    # Skip duplicates
+                    # Skip duplicates - rollback this single insert
+                    conn.rollback()
                     continue
         
         conn.commit()
@@ -282,6 +291,9 @@ def sync_users_from_csv():
         
     except Exception as e:
         print(f"Error syncing users: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
 
 def generate_id():
     return str(uuid.uuid4())[:8].upper()
@@ -904,11 +916,17 @@ def debug_check():
 def initialize_database():
     """Initialize database and load sample data if CSV is not available"""
     try:
+        print("=== Starting database initialization ===")
+        
         # First try to initialize the database
+        print("Step 1: Initializing database schema...")
         init_db()
+        print("✅ Database schema initialized")
         
         # Try to load CSV data
+        print("Step 2: Loading CSV data...")
         csv_loaded = load_csv_data()
+        print(f"CSV loading result: {csv_loaded}")
         
         # If CSV loading failed, create some sample data
         if not csv_loaded:
@@ -956,10 +974,15 @@ def initialize_database():
         else:
             message = "Database initialized and CSV data loaded successfully"
         
+        print("=== Database initialization completed successfully ===")
         return jsonify({'success': True, 'message': message})
         
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Database initialization error: {str(e)}")
+        print(f"Traceback: {error_trace}")
+        return jsonify({'success': False, 'error': str(e), 'trace': error_trace}), 500
 
 @app.route('/stats', methods=['GET'])
 def get_stats():
