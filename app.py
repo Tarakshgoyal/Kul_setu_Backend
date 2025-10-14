@@ -935,6 +935,35 @@ def debug_check():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/reset-db', methods=['POST'])
+def reset_database():
+    """Drop and recreate the database tables"""
+    try:
+        conn = get_db_connection()
+        conn.autocommit = True
+        cur = conn.cursor()
+        
+        print("Dropping existing tables...")
+        cur.execute('DROP TABLE IF EXISTS family_members CASCADE')
+        cur.execute('DROP TABLE IF EXISTS users CASCADE')
+        print("✅ Tables dropped")
+        
+        cur.close()
+        conn.close()
+        
+        # Now recreate them
+        print("Recreating tables...")
+        init_db()
+        print("✅ Tables recreated")
+        
+        return jsonify({'success': True, 'message': 'Database reset successfully'})
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"❌ Reset error: {str(e)}")
+        print(f"Traceback: {error_trace}")
+        return jsonify({'success': False, 'error': str(e), 'trace': error_trace}), 500
+
 @app.route('/init-db', methods=['POST'])
 def initialize_database():
     """Initialize database and load sample data if CSV is not available"""
