@@ -300,13 +300,12 @@ def sync_users_from_csv():
                         INSERT INTO users (user_id, email, password_hash, first_name, last_name, family_id, person_id)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ''', (user_id, email, password_hash, first_name, '', family_id, person_id))
+                    conn.commit()  # Commit immediately after each successful insert
                     added_count += 1
                 except Exception as e:
-                    # Skip duplicates - rollback this single insert
-                    conn.rollback()
+                    # Skip duplicates or errors - no rollback needed since we commit after each insert
                     continue
         
-        conn.commit()
         cur.close()
         conn.close()
         
@@ -1050,6 +1049,26 @@ def get_stats():
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e), 'total_members': 0, 'total_families': 0}), 500
+
+@app.route('/family-members', methods=['GET'])
+def get_family_members():
+    """Get all family members from database"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cur.execute('SELECT * FROM family_members ORDER BY person_id')
+        members = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        # Convert to list of dicts
+        members_list = [dict(member) for member in members]
+        
+        return jsonify(members_list)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/reload-csv', methods=['POST'])
 def reload_csv():
