@@ -862,6 +862,44 @@ def root():
 def health_check():
     return jsonify({'status': 'OK', 'message': 'Kul Setu ML Search Backend is running'})
 
+@app.route('/debug', methods=['GET'])
+def debug_check():
+    """Debug endpoint to check CSV file and database connectivity"""
+    try:
+        debug_info = {}
+        
+        # Check CSV file
+        csv_file_path = os.path.join(os.path.dirname(__file__), 'tree.csv')
+        debug_info['csv_file_path'] = csv_file_path
+        debug_info['csv_exists'] = os.path.exists(csv_file_path)
+        
+        if debug_info['csv_exists']:
+            debug_info['csv_size'] = os.path.getsize(csv_file_path)
+            # Quick CSV check
+            try:
+                with open(csv_file_path, 'r', encoding='utf-8') as f:
+                    import csv
+                    reader = csv.DictReader(f)
+                    headers = reader.fieldnames
+                    debug_info['csv_headers_count'] = len(headers) if headers else 0
+                    debug_info['has_email'] = 'Email' in (headers or [])
+                    debug_info['has_password'] = 'Password' in (headers or [])
+            except Exception as e:
+                debug_info['csv_error'] = str(e)
+        
+        # Check database connection
+        try:
+            conn = get_db_connection()
+            debug_info['database_connected'] = True
+            conn.close()
+        except Exception as e:
+            debug_info['database_error'] = str(e)
+            debug_info['database_connected'] = False
+        
+        return jsonify(debug_info)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/init-db', methods=['POST'])
 def initialize_database():
     """Initialize database and load sample data if CSV is not available"""
