@@ -88,9 +88,30 @@ def init_db():
             other_disease VARCHAR(200),
             passion VARCHAR(100),
             disability VARCHAR(200),
+            email VARCHAR(255),
+            password VARCHAR(255),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+    else:
+        # If table exists, ensure Email and Password columns exist
+        print("Table exists, checking for Email and Password columns...")
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'family_members' AND column_name IN ('email', 'password')
+        """)
+        existing_cols = [row[0] for row in cur.fetchall()]
+        
+        if 'email' not in existing_cols:
+            print("Adding Email column...")
+            cur.execute("ALTER TABLE family_members ADD COLUMN email VARCHAR(255)")
+        
+        if 'password' not in existing_cols:
+            print("Adding Password column...")
+            cur.execute("ALTER TABLE family_members ADD COLUMN password VARCHAR(255)")
+        
+        conn.commit()
     
     # Create users table for authentication
     cur.execute('''
