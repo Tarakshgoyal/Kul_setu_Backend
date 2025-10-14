@@ -169,8 +169,8 @@ def load_csv_data():
                             baldness, beard_style_trend, condition_diabetes, condition_heart_issue,
                             condition_asthma, condition_color_blindness, left_handed, is_twin,
                             nature_of_person, recipes_cuisine, family_traditions, native_location,
-                            migration_path, socioeconomic_status, education_level, other_disease, passion, disability
-                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            migration_path, socioeconomic_status, education_level, other_disease, passion, disability, email, password
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ''', (
                         row['Person_ID'],
                         row['Family_Line_ID'],
@@ -210,7 +210,9 @@ def load_csv_data():
                         row['Education_Level'],
                         row.get('Other_Disease', None),  # New field, optional in CSV
                         row.get('Passion', None),  # New field, optional in CSV
-                        row.get('Disability', None)  # New field, optional in CSV
+                        row.get('Disability', None),  # New field, optional in CSV
+                        row.get('Email', None),  # New field for authentication
+                        row.get('Password', None)  # New field for authentication
                     ))
                     count += 1
                     if count % 100 == 0:
