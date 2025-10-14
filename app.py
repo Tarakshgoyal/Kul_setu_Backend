@@ -12,6 +12,7 @@ import uuid #data.json
 import os
 import csv
 from datetime import datetime
+import hashlib
 
 app = Flask(__name__)
 CORS(app)
@@ -87,6 +88,20 @@ def init_db():
             other_disease VARCHAR(200),
             passion VARCHAR(100),
             disability VARCHAR(200),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
+    # Create users table for authentication
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            user_id VARCHAR(50) PRIMARY KEY,
+            email VARCHAR(255) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            first_name VARCHAR(100) NOT NULL,
+            last_name VARCHAR(100) NOT NULL,
+            family_id VARCHAR(50),
+            person_id VARCHAR(50),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -207,11 +222,64 @@ def load_csv_data():
         cur.close()
         conn.close()
         print(f"Successfully loaded {count} records from CSV into database")
+        
+        # Sync users table with CSV email/password data
+        sync_users_from_csv()
+        
         return True
         
     except Exception as e:
         print(f"Error loading CSV data: {e}")
         return False
+
+def sync_users_from_csv():
+    """Sync users table with email/password data from CSV"""
+    try:
+        print("Syncing users table with CSV email/password data...")
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Read CSV to get email and password data
+        with open('tree.csv', 'r', encoding='utf-8') as file:
+            csv_reader = csv.DictReader(file)
+            
+            added_count = 0
+            for row in csv_reader:
+                person_id = row.get('Person_ID')
+                first_name = row.get('First_Name', '').replace('_', ' ').title()
+                family_id = row.get('Family_Line_ID')
+                email = row.get('Email')
+                password_hash = row.get('Password')  # Already hashed
+                
+                if not all([person_id, first_name, family_id, email, password_hash]):
+                    continue
+                
+                # Check if user already exists
+                cur.execute('SELECT user_id FROM users WHERE email = %s', (email,))
+                if cur.fetchone():
+                    continue  # Skip if user already exists
+                
+                # Insert new user
+                user_id = f"U{person_id[1:]}"  # Convert P0001 to U0001
+                try:
+                    cur.execute('''
+                        INSERT INTO users (user_id, email, password_hash, first_name, last_name, family_id, person_id)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ''', (user_id, email, password_hash, first_name, '', family_id, person_id))
+                    added_count += 1
+                except Exception as e:
+                    # Skip duplicates
+                    continue
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        print(f"✅ Users synced: {added_count} new users added to authentication system")
+        
+    except Exception as e:
+        print(f"Error syncing users: {e}")
 
 def generate_id():
     return str(uuid.uuid4())[:8].upper()
@@ -880,6 +948,134 @@ def reload_csv():
             'success': True, 
             'message': f'Successfully reloaded {len(engine.family_members)} members from CSV'
         })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+def hash_password(password):
+    """Hash password using SHA-256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_password(password, stored_hash):
+    """Verify password against hash"""
+    return hash_password(password) == stored_hash
+
+@app.route('/auth/signup', methods=['POST'])
+def auth_signup():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        first_name = data.get('firstName')
+        last_name = data.get('lastName')
+        family_id = data.get('familyId')
+        person_id = data.get('personId')
+        
+        if not all([email, password, first_name, last_name]):
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Check if email already exists
+        cur.execute('SELECT email FROM users WHERE email = %s', (email,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Email already registered'}), 400
+        
+        # Generate user ID
+        user_id = str(uuid.uuid4())[:8].upper()
+        
+        # Handle family_id and person_id logic
+        if family_id:
+            # Verify family exists
+            cur.execute('SELECT family_line_id FROM family_members WHERE family_line_id = %s LIMIT 1', (family_id,))
+            if not cur.fetchone():
+                cur.close()
+                conn.close()
+                return jsonify({'success': False, 'error': 'Family ID not found'}), 400
+            
+            # If person_id provided, verify it exists in the family
+            if person_id:
+                cur.execute('SELECT person_id FROM family_members WHERE person_id = %s AND family_line_id = %s', (person_id, family_id))
+                if not cur.fetchone():
+                    cur.close()
+                    conn.close()
+                    return jsonify({'success': False, 'error': 'Person ID not found in the specified family'}), 400
+            else:
+                # Generate new person ID for this family
+                cur.execute('SELECT MAX(CAST(SUBSTRING(person_id FROM 2) AS INTEGER)) FROM family_members WHERE family_line_id = %s', (family_id,))
+                max_person_num = cur.fetchone()[0] or 0
+                person_id = f"P{max_person_num + 1:04d}"
+        else:
+            # Generate new family ID and person ID
+            cur.execute('SELECT MAX(CAST(SUBSTRING(family_line_id FROM 2) AS INTEGER)) FROM family_members')
+            max_family_num = cur.fetchone()[0] or 0
+            family_id = f"F{max_family_num + 1:02d}"
+            person_id = f"P{1:04d}" if not person_id else person_id
+        
+        # Hash password
+        password_hash = hash_password(password)
+        
+        # Insert user
+        cur.execute('''
+            INSERT INTO users (user_id, email, password_hash, first_name, last_name, family_id, person_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (user_id, email, password_hash, first_name, last_name, family_id, person_id))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'userId': user_id,
+            'familyId': family_id,
+            'personId': person_id,
+            'message': 'User registered successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/auth/login', methods=['POST'])
+def auth_login():
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not all([email, password]):
+            return jsonify({'success': False, 'error': 'Missing email or password'}), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Get user by email
+        cur.execute('''
+            SELECT user_id, email, password_hash, first_name, last_name, family_id, person_id
+            FROM users WHERE email = %s
+        ''', (email,))
+        
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not user or not verify_password(password, user['password_hash']):
+            return jsonify({'success': False, 'error': 'Invalid email or password'}), 401
+        
+        return jsonify({
+            'success': True,
+            'user': {
+                'id': user['user_id'],
+                'email': user['email'],
+                'firstName': user['first_name'],
+                'lastName': user['last_name'],
+                'familyId': user['family_id'],
+                'personId': user['person_id']
+            }
+        })
+        
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
