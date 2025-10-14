@@ -130,7 +130,8 @@ def parse_decimal(value_str):
 
 def load_csv_data():
     """Load data from tree.csv into the database"""
-    csv_file_path = 'tree.csv'
+    # Use absolute path to ensure CSV file is found in deployment
+    csv_file_path = os.path.join(os.path.dirname(__file__), 'tree.csv')
     if not os.path.exists(csv_file_path):
         print(f"CSV file {csv_file_path} not found!")
         return False
@@ -241,7 +242,8 @@ def sync_users_from_csv():
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
         # Read CSV to get email and password data
-        with open('tree.csv', 'r', encoding='utf-8') as file:
+        csv_file_path = os.path.join(os.path.dirname(__file__), 'tree.csv')
+        with open(csv_file_path, 'r', encoding='utf-8') as file:
             csv_reader = csv.DictReader(file)
             
             added_count = 0
