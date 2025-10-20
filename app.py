@@ -1790,14 +1790,14 @@ def get_upcoming_rituals():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         
-        query = '''
+        query = f'''
             SELECT r.*, f.first_name, f.family_line_id
             FROM ritual_reminders r
             LEFT JOIN family_members f ON r.person_id = f.person_id
-            WHERE r.ritual_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '%s days'
+            WHERE r.ritual_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '{days_ahead} days'
             AND r.is_completed = FALSE
         '''
-        params = [days_ahead]
+        params = []
         
         if family_id:
             query += ' AND r.family_id = %s'
