@@ -127,6 +127,47 @@ def init_db():
         )
     ''')
     
+    # Create ritual reminders table
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS ritual_reminders (
+            reminder_id VARCHAR(50) PRIMARY KEY,
+            family_id VARCHAR(50) NOT NULL,
+            person_id VARCHAR(50),
+            ritual_type VARCHAR(50) NOT NULL,
+            ritual_name VARCHAR(200) NOT NULL,
+            ritual_date DATE NOT NULL,
+            recurring BOOLEAN DEFAULT FALSE,
+            recurrence_pattern VARCHAR(50),
+            location VARCHAR(200),
+            pandit_type VARCHAR(100),
+            kul_devta VARCHAR(100),
+            description TEXT,
+            notes TEXT,
+            reminder_days_before INTEGER DEFAULT 7,
+            is_completed BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (family_id) REFERENCES family_members(family_line_id) ON DELETE CASCADE,
+            FOREIGN KEY (person_id) REFERENCES family_members(person_id) ON DELETE CASCADE
+        )
+    ''')
+    
+    # Create index for faster queries
+    cur.execute('''
+        CREATE INDEX IF NOT EXISTS idx_ritual_family 
+        ON ritual_reminders(family_id)
+    ''')
+    
+    cur.execute('''
+        CREATE INDEX IF NOT EXISTS idx_ritual_date 
+        ON ritual_reminders(ritual_date)
+    ''')
+    
+    cur.execute('''
+        CREATE INDEX IF NOT EXISTS idx_ritual_type 
+        ON ritual_reminders(ritual_type)
+    ''')
+    
     conn.commit()
     cur.close()
     conn.close()
@@ -313,6 +354,275 @@ def sync_users_from_csv():
         
     except Exception as e:
         print(f"Error syncing users: {e}")
+        if conn:
+            conn.rollback()
+            conn.close()
+
+def load_sample_ritual_data():
+    """Load sample ritual reminder data for demonstration"""
+    try:
+        print("Loading sample ritual reminder data...")
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Check if ritual_reminders table has data
+        cur.execute('SELECT COUNT(*) FROM ritual_reminders')
+        count = cur.fetchone()[0]
+        
+        if count > 0:
+            print(f"✅ Ritual reminders already exist ({count} records), skipping sample data")
+            cur.close()
+            conn.close()
+            return
+        
+        # Get some family IDs and person IDs from family_members table
+        cur.execute('SELECT DISTINCT family_line_id FROM family_members LIMIT 5')
+        families = [row[0] for row in cur.fetchall()]
+        
+        if not families:
+            print("⚠️  No families found, cannot create sample ritual data")
+            cur.close()
+            conn.close()
+            return
+        
+        # Get some deceased members for Barsi rituals
+        cur.execute('SELECT person_id, family_line_id, dod FROM family_members WHERE dod IS NOT NULL LIMIT 5')
+        deceased_members = cur.fetchall()
+        
+        sample_rituals = []
+        
+        # Sample data for different ritual types
+        from datetime import datetime, timedelta
+        
+        # 1. Barsi (Death Anniversary) - for deceased members
+        for i, (person_id, family_id, dod) in enumerate(deceased_members[:3]):
+            if dod:
+                # Calculate next anniversary
+                today = datetime.now().date()
+                anniversary = dod.replace(year=today.year)
+                if anniversary < today:
+                    anniversary = anniversary.replace(year=today.year + 1)
+                
+                sample_rituals.append({
+                    'reminder_id': f"REM{i+1:04d}",
+                    'family_id': family_id,
+                    'person_id': person_id,
+                    'ritual_type': 'barsi',
+                    'ritual_name': f'Barsi Ceremony for {person_id}',
+                    'ritual_date': anniversary,
+                    'recurring': True,
+                    'recurrence_pattern': 'yearly',
+                    'location': 'Family Temple, Delhi',
+                    'pandit_type': 'Purohit',
+                    'kul_devta': 'Lord Shiva',
+                    'description': f'Annual death anniversary ceremony with puja and prasad distribution',
+                    'notes': 'Invite all family members, arrange for bhajan and langar',
+                    'reminder_days_before': 15
+                })
+        
+        # 2. Shraad Ritual
+        sample_rituals.append({
+            'reminder_id': 'REM0004',
+            'family_id': families[0],
+            'person_id': None,
+            'ritual_type': 'shraad',
+            'ritual_name': 'Pitru Paksha Shraad',
+            'ritual_date': datetime(2025, 10, 2).date(),
+            'recurring': True,
+            'recurrence_pattern': 'yearly',
+            'location': 'Haridwar Ghat',
+            'pandit_type': 'Acharya',
+            'kul_devta': 'Ancestors',
+            'description': 'Annual Shraad ceremony for ancestors during Pitru Paksha',
+            'notes': 'Perform tarpan at Har ki Pauri, donate to Brahmins',
+            'reminder_days_before': 20
+        })
+        
+        # 3. Marriage Ceremony
+        sample_rituals.append({
+            'reminder_id': 'REM0005',
+            'family_id': families[0] if len(families) > 0 else None,
+            'person_id': None,
+            'ritual_type': 'marriage',
+            'ritual_name': 'Wedding Ceremony - Rahul & Priya',
+            'ritual_date': datetime(2026, 2, 14).date(),
+            'recurring': False,
+            'recurrence_pattern': 'one_time',
+            'location': 'Grand Palace Banquet, Mumbai',
+            'pandit_type': 'Pandit',
+            'kul_devta': 'Ganesha',
+            'description': 'Traditional Hindu wedding ceremony with all rituals',
+            'notes': 'Mehendi, Sangeet, Haldi, and Wedding ceremonies planned',
+            'reminder_days_before': 30
+        })
+        
+        # 4. Pooja Reminder
+        sample_rituals.append({
+            'reminder_id': 'REM0006',
+            'family_id': families[1] if len(families) > 1 else families[0],
+            'person_id': None,
+            'ritual_type': 'pooja',
+            'ritual_name': 'Satyanarayan Puja',
+            'ritual_date': datetime.now().date() + timedelta(days=30),
+            'recurring': True,
+            'recurrence_pattern': 'monthly',
+            'location': 'Home Temple',
+            'pandit_type': 'Purohit',
+            'kul_devta': 'Lord Vishnu',
+            'description': 'Monthly Satyanarayan Puja at home with family',
+            'notes': 'Prepare prasad, invite close family members',
+            'reminder_days_before': 5
+        })
+        
+        # 5. Worship Ritual
+        sample_rituals.append({
+            'reminder_id': 'REM0007',
+            'family_id': families[0],
+            'person_id': None,
+            'ritual_type': 'worship',
+            'ritual_name': 'Daily Morning Aarti',
+            'ritual_date': datetime.now().date() + timedelta(days=1),
+            'recurring': True,
+            'recurrence_pattern': 'daily',
+            'location': 'Home Temple',
+            'pandit_type': None,
+            'kul_devta': 'Family Deity',
+            'description': 'Daily morning worship and aarti',
+            'notes': 'Light diya, offer flowers and prasad',
+            'reminder_days_before': 0
+        })
+        
+        # 6. Kul Devta Worship
+        sample_rituals.append({
+            'reminder_id': 'REM0008',
+            'family_id': families[0],
+            'person_id': None,
+            'ritual_type': 'kul_devta',
+            'ritual_name': 'Kul Devi Darshan',
+            'ritual_date': datetime(2025, 11, 10).date(),
+            'recurring': True,
+            'recurrence_pattern': 'yearly',
+            'location': 'Vaishno Devi Temple, Jammu',
+            'pandit_type': 'Temple Priest',
+            'kul_devta': 'Vaishno Devi',
+            'description': 'Annual pilgrimage to Kul Devi temple',
+            'notes': 'Book accommodation in advance, organize family trip',
+            'reminder_days_before': 60
+        })
+        
+        # 7. Festival Ritual - Diwali
+        sample_rituals.append({
+            'reminder_id': 'REM0009',
+            'family_id': families[0],
+            'person_id': None,
+            'ritual_type': 'festival',
+            'ritual_name': 'Diwali Lakshmi Puja',
+            'ritual_date': datetime(2025, 10, 24).date(),
+            'recurring': True,
+            'recurrence_pattern': 'yearly',
+            'location': 'Home',
+            'pandit_type': 'Pandit',
+            'kul_devta': 'Goddess Lakshmi',
+            'description': 'Diwali festival celebration with Lakshmi Puja',
+            'notes': 'Prepare rangoli, diyas, sweets. Invite extended family',
+            'reminder_days_before': 10
+        })
+        
+        # 8. Festival Ritual - Holi
+        sample_rituals.append({
+            'reminder_id': 'REM0010',
+            'family_id': families[1] if len(families) > 1 else families[0],
+            'person_id': None,
+            'ritual_type': 'festival',
+            'ritual_name': 'Holi Celebration & Holika Dahan',
+            'ritual_date': datetime(2026, 3, 14).date(),
+            'recurring': True,
+            'recurrence_pattern': 'yearly',
+            'location': 'Community Ground',
+            'pandit_type': 'Purohit',
+            'kul_devta': 'Lord Krishna',
+            'description': 'Holi festival with Holika Dahan and color play',
+            'notes': 'Organize bonfire, arrange colors and sweets',
+            'reminder_days_before': 7
+        })
+        
+        # 9. Birth Ritual - Namkaran
+        sample_rituals.append({
+            'reminder_id': 'REM0011',
+            'family_id': families[0],
+            'person_id': None,
+            'ritual_type': 'birth',
+            'ritual_name': 'Namkaran Ceremony - Baby',
+            'ritual_date': datetime.now().date() + timedelta(days=45),
+            'recurring': False,
+            'recurrence_pattern': 'one_time',
+            'location': 'Home',
+            'pandit_type': 'Pandit',
+            'kul_devta': 'Ganesha',
+            'description': 'Naming ceremony for newborn baby',
+            'notes': 'Consult astrologer for auspicious name, invite family',
+            'reminder_days_before': 15
+        })
+        
+        # 10. Death Ritual
+        sample_rituals.append({
+            'reminder_id': 'REM0012',
+            'family_id': families[0],
+            'person_id': deceased_members[0][0] if deceased_members else None,
+            'ritual_type': 'death',
+            'ritual_name': 'Asthi Visarjan at Haridwar',
+            'ritual_date': datetime.now().date() + timedelta(days=90),
+            'recurring': False,
+            'recurrence_pattern': 'one_time',
+            'location': 'Har ki Pauri, Haridwar',
+            'pandit_type': 'Purohit',
+            'kul_devta': None,
+            'description': 'Immersion of ashes in holy Ganga river',
+            'notes': 'Arrange travel to Haridwar, book pandit in advance',
+            'reminder_days_before': 30
+        })
+        
+        # Insert all sample rituals
+        inserted = 0
+        for ritual in sample_rituals:
+            try:
+                cur.execute('''
+                    INSERT INTO ritual_reminders (
+                        reminder_id, family_id, person_id, ritual_type, ritual_name, ritual_date,
+                        recurring, recurrence_pattern, location, pandit_type, kul_devta,
+                        description, notes, reminder_days_before, is_completed
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ''', (
+                    ritual['reminder_id'],
+                    ritual['family_id'],
+                    ritual.get('person_id'),
+                    ritual['ritual_type'],
+                    ritual['ritual_name'],
+                    ritual['ritual_date'],
+                    ritual['recurring'],
+                    ritual['recurrence_pattern'],
+                    ritual['location'],
+                    ritual.get('pandit_type'),
+                    ritual.get('kul_devta'),
+                    ritual['description'],
+                    ritual['notes'],
+                    ritual['reminder_days_before'],
+                    False
+                ))
+                inserted += 1
+            except Exception as e:
+                print(f"Error inserting ritual {ritual['reminder_id']}: {e}")
+                continue
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        print(f"✅ Sample ritual data loaded: {inserted} ritual reminders created")
+        
+    except Exception as e:
+        print(f"Error loading sample ritual data: {e}")
         if conn:
             conn.rollback()
             conn.close()
@@ -1025,6 +1335,10 @@ def initialize_database():
         else:
             message = "Database initialized and CSV data loaded successfully"
         
+        # Load sample ritual reminder data
+        print("Step 3: Loading sample ritual reminder data...")
+        load_sample_ritual_data()
+        
         print("=== Database initialization completed successfully ===")
         return jsonify({'success': True, 'message': message})
         
@@ -1213,7 +1527,413 @@ def auth_login():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-if __name__ == '__main__':
+# ============== RITUAL REMINDERS ENDPOINTS ==============
+
+@app.route('/rituals/types', methods=['GET'])
+def get_ritual_types():
+    """Get list of supported ritual types"""
+    return jsonify({
+        'ritual_types': [
+            {'value': 'barsi', 'label': 'Barsi (Death Anniversary)'},
+            {'value': 'shraad', 'label': 'Shraad Ritual'},
+            {'value': 'marriage', 'label': 'Marriage Ceremony'},
+            {'value': 'pooja', 'label': 'Pooja Reminder'},
+            {'value': 'worship', 'label': 'Worship Ritual'},
+            {'value': 'kul_devta', 'label': 'Kul Devta Worship'},
+            {'value': 'festival', 'label': 'Festival Ritual'},
+            {'value': 'birth', 'label': 'Birth Ritual'},
+            {'value': 'death', 'label': 'Death Ritual'}
+        ],
+        'recurrence_patterns': ['yearly', 'monthly', 'weekly', 'one_time'],
+        'pandit_types': ['Purohit', 'Acharya', 'Pandit', 'Guru', 'Other']
+    })
+
+@app.route('/rituals/create', methods=['POST'])
+def create_ritual_reminder():
+    """Create a new ritual reminder"""
+    try:
+        data = request.json
+        
+        # Validate required fields
+        required_fields = ['familyId', 'ritualType', 'ritualName', 'ritualDate']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'success': False, 'error': f'Missing required field: {field}'}), 400
+        
+        # Validate ritual type
+        valid_types = ['barsi', 'shraad', 'marriage', 'pooja', 'worship', 'kul_devta', 'festival', 'birth', 'death']
+        if data['ritualType'] not in valid_types:
+            return jsonify({'success': False, 'error': 'Invalid ritual type'}), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Verify family exists
+        cur.execute('SELECT family_line_id FROM family_members WHERE family_line_id = %s LIMIT 1', (data['familyId'],))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Family ID not found'}), 400
+        
+        # If person_id provided, verify it exists
+        if data.get('personId'):
+            cur.execute('SELECT person_id FROM family_members WHERE person_id = %s AND family_line_id = %s', 
+                       (data['personId'], data['familyId']))
+            if not cur.fetchone():
+                cur.close()
+                conn.close()
+                return jsonify({'success': False, 'error': 'Person ID not found in the specified family'}), 400
+        
+        # Generate reminder ID
+        reminder_id = f"REM{str(uuid.uuid4())[:8].upper()}"
+        
+        # Insert ritual reminder
+        cur.execute('''
+            INSERT INTO ritual_reminders (
+                reminder_id, family_id, person_id, ritual_type, ritual_name, ritual_date,
+                recurring, recurrence_pattern, location, pandit_type, kul_devta,
+                description, notes, reminder_days_before, is_completed
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (
+            reminder_id,
+            data['familyId'],
+            data.get('personId'),
+            data['ritualType'],
+            data['ritualName'],
+            parse_date(data['ritualDate']),
+            data.get('recurring', False),
+            data.get('recurrencePattern'),
+            data.get('location'),
+            data.get('panditType'),
+            data.get('kulDevta'),
+            data.get('description'),
+            data.get('notes'),
+            data.get('reminderDaysBefore', 7),
+            False
+        ))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Ritual reminder created successfully',
+            'reminderId': reminder_id
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/rituals/<family_id>', methods=['GET'])
+def get_family_rituals(family_id):
+    """Get all ritual reminders for a family"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Optional filters
+        ritual_type = request.args.get('type')
+        show_completed = request.args.get('showCompleted', 'true').lower() == 'true'
+        upcoming_only = request.args.get('upcomingOnly', 'false').lower() == 'true'
+        
+        query = 'SELECT * FROM ritual_reminders WHERE family_id = %s'
+        params = [family_id]
+        
+        if ritual_type:
+            query += ' AND ritual_type = %s'
+            params.append(ritual_type)
+        
+        if not show_completed:
+            query += ' AND is_completed = FALSE'
+        
+        if upcoming_only:
+            query += ' AND ritual_date >= CURRENT_DATE'
+        
+        query += ' ORDER BY ritual_date ASC'
+        
+        cur.execute(query, params)
+        rituals = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        # Convert to list of dicts with camelCase keys
+        rituals_list = []
+        for ritual in rituals:
+            rituals_list.append({
+                'reminderId': ritual['reminder_id'],
+                'familyId': ritual['family_id'],
+                'personId': ritual['person_id'],
+                'ritualType': ritual['ritual_type'],
+                'ritualName': ritual['ritual_name'],
+                'ritualDate': str(ritual['ritual_date']),
+                'recurring': ritual['recurring'],
+                'recurrencePattern': ritual['recurrence_pattern'],
+                'location': ritual['location'],
+                'panditType': ritual['pandit_type'],
+                'kulDevta': ritual['kul_devta'],
+                'description': ritual['description'],
+                'notes': ritual['notes'],
+                'reminderDaysBefore': ritual['reminder_days_before'],
+                'isCompleted': ritual['is_completed'],
+                'createdAt': str(ritual['created_at']),
+                'updatedAt': str(ritual['updated_at'])
+            })
+        
+        return jsonify(rituals_list)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/rituals/update/<reminder_id>', methods=['PUT'])
+def update_ritual_reminder(reminder_id):
+    """Update a ritual reminder"""
+    try:
+        data = request.json
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Check if reminder exists
+        cur.execute('SELECT reminder_id FROM ritual_reminders WHERE reminder_id = %s', (reminder_id,))
+        if not cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reminder not found'}), 404
+        
+        # Build update query dynamically
+        update_fields = []
+        params = []
+        
+        field_mapping = {
+            'ritualType': 'ritual_type',
+            'ritualName': 'ritual_name',
+            'ritualDate': 'ritual_date',
+            'recurring': 'recurring',
+            'recurrencePattern': 'recurrence_pattern',
+            'location': 'location',
+            'panditType': 'pandit_type',
+            'kulDevta': 'kul_devta',
+            'description': 'description',
+            'notes': 'notes',
+            'reminderDaysBefore': 'reminder_days_before',
+            'isCompleted': 'is_completed'
+        }
+        
+        for frontend_key, db_key in field_mapping.items():
+            if frontend_key in data:
+                value = data[frontend_key]
+                if frontend_key == 'ritualDate' and value:
+                    value = parse_date(value)
+                update_fields.append(f"{db_key} = %s")
+                params.append(value)
+        
+        if not update_fields:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'No fields to update'}), 400
+        
+        # Add updated_at timestamp
+        update_fields.append("updated_at = CURRENT_TIMESTAMP")
+        
+        # Add reminder_id for WHERE clause
+        params.append(reminder_id)
+        
+        query = f"UPDATE ritual_reminders SET {', '.join(update_fields)} WHERE reminder_id = %s"
+        cur.execute(query, params)
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Ritual reminder updated successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/rituals/delete/<reminder_id>', methods=['DELETE'])
+def delete_ritual_reminder(reminder_id):
+    """Delete a ritual reminder"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        cur.execute('DELETE FROM ritual_reminders WHERE reminder_id = %s', (reminder_id,))
+        
+        if cur.rowcount == 0:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': 'Reminder not found'}), 404
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Ritual reminder deleted successfully'
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/rituals/upcoming', methods=['GET'])
+def get_upcoming_rituals():
+    """Get upcoming rituals across all families (or filtered by family_id)"""
+    try:
+        family_id = request.args.get('familyId')
+        days_ahead = int(request.args.get('daysAhead', 30))
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        query = '''
+            SELECT r.*, f.first_name, f.family_line_id
+            FROM ritual_reminders r
+            LEFT JOIN family_members f ON r.person_id = f.person_id
+            WHERE r.ritual_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '%s days'
+            AND r.is_completed = FALSE
+        '''
+        params = [days_ahead]
+        
+        if family_id:
+            query += ' AND r.family_id = %s'
+            params.append(family_id)
+        
+        query += ' ORDER BY r.ritual_date ASC'
+        
+        cur.execute(query, params)
+        rituals = cur.fetchall()
+        
+        cur.close()
+        conn.close()
+        
+        # Convert to list with camelCase
+        rituals_list = []
+        for ritual in rituals:
+            rituals_list.append({
+                'reminderId': ritual['reminder_id'],
+                'familyId': ritual['family_id'],
+                'personId': ritual['person_id'],
+                'personName': ritual.get('first_name'),
+                'ritualType': ritual['ritual_type'],
+                'ritualName': ritual['ritual_name'],
+                'ritualDate': str(ritual['ritual_date']),
+                'location': ritual['location'],
+                'panditType': ritual['pandit_type'],
+                'kulDevta': ritual['kul_devta'],
+                'description': ritual['description'],
+                'reminderDaysBefore': ritual['reminder_days_before']
+            })
+        
+        return jsonify(rituals_list)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/rituals/stats', methods=['GET'])
+def get_ritual_stats():
+    """Get statistics about ritual reminders"""
+    try:
+        family_id = request.args.get('familyId')
+        
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        
+        # Total count
+        if family_id:
+            cur.execute('SELECT COUNT(*) as total FROM ritual_reminders WHERE family_id = %s', (family_id,))
+        else:
+            cur.execute('SELECT COUNT(*) as total FROM ritual_reminders')
+        total = cur.fetchone()['total']
+        
+        # Count by ritual type
+        if family_id:
+            cur.execute('''
+                SELECT ritual_type, COUNT(*) as count 
+                FROM ritual_reminders 
+                WHERE family_id = %s
+                GROUP BY ritual_type
+            ''', (family_id,))
+        else:
+            cur.execute('''
+                SELECT ritual_type, COUNT(*) as count 
+                FROM ritual_reminders 
+                GROUP BY ritual_type
+            ''')
+        by_type = {row['ritual_type']: row['count'] for row in cur.fetchall()}
+        
+        # Upcoming rituals count (next 30 days)
+        if family_id:
+            cur.execute('''
+                SELECT COUNT(*) as upcoming 
+                FROM ritual_reminders 
+                WHERE family_id = %s 
+                AND ritual_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days'
+                AND is_completed = FALSE
+            ''', (family_id,))
+        else:
+            cur.execute('''
+                SELECT COUNT(*) as upcoming 
+                FROM ritual_reminders 
+                WHERE ritual_date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '30 days'
+                AND is_completed = FALSE
+            ''')
+        upcoming = cur.fetchone()['upcoming']
+        
+        # Completed count
+        if family_id:
+            cur.execute('''
+                SELECT COUNT(*) as completed 
+                FROM ritual_reminders 
+                WHERE family_id = %s AND is_completed = TRUE
+            ''', (family_id,))
+        else:
+            cur.execute('SELECT COUNT(*) as completed FROM ritual_reminders WHERE is_completed = TRUE')
+        completed = cur.fetchone()['completed']
+        
+        cur.close()
+        conn.close()
+        
+        return jsonify({
+            'total': total,
+            'byType': by_type,
+            'upcoming': upcoming,
+            'completed': completed,
+            'pending': total - completed
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/rituals/reload-sample', methods=['POST'])
+def reload_ritual_sample_data():
+    """Reload sample ritual data (for testing)"""
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Clear existing data
+        cur.execute('DELETE FROM ritual_reminders')
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        # Load new sample data
+        load_sample_ritual_data()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Sample ritual data reloaded successfully'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
     print("Starting Kul Setu ML Search Backend...")
     
     try:
