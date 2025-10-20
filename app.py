@@ -1592,14 +1592,17 @@ def create_ritual_reminder():
             conn.close()
             return jsonify({'success': False, 'error': 'Family ID not found'}), 400
         
-        # If person_id provided, verify it exists
-        if data.get('personId'):
+        # If person_id provided and not empty, verify it exists
+        person_id = data.get('personId')
+        if person_id and person_id.strip():  # Only validate if not empty
             cur.execute('SELECT person_id FROM family_members WHERE person_id = %s AND family_line_id = %s', 
-                       (data['personId'], data['familyId']))
+                       (person_id, data['familyId']))
             if not cur.fetchone():
                 cur.close()
                 conn.close()
                 return jsonify({'success': False, 'error': 'Person ID not found in the specified family'}), 400
+        else:
+            person_id = None  # Convert empty string to None
         
         # Generate reminder ID
         reminder_id = f"REM{str(uuid.uuid4())[:8].upper()}"
@@ -1613,6 +1616,12 @@ def create_ritual_reminder():
             conn.close()
             return jsonify({'success': False, 'error': f'Invalid date format: {data["ritualDate"]}'}), 400
         
+        # Helper function to convert empty strings to None
+        def clean_value(value):
+            if isinstance(value, str):
+                return value.strip() if value.strip() else None
+            return value
+        
         # Insert ritual reminder
         cur.execute('''
             INSERT INTO ritual_reminders (
@@ -1623,17 +1632,17 @@ def create_ritual_reminder():
         ''', (
             reminder_id,
             data['familyId'],
-            data.get('personId'),
+            person_id,
             data['ritualType'],
             data['ritualName'],
             parsed_date,
             data.get('recurring', False),
-            data.get('recurrencePattern'),
-            data.get('location'),
-            data.get('panditType'),
-            data.get('kulDevta'),
-            data.get('description'),
-            data.get('notes'),
+            clean_value(data.get('recurrencePattern')),
+            clean_value(data.get('location')),
+            clean_value(data.get('panditType')),
+            clean_value(data.get('kulDevta')),
+            clean_value(data.get('description')),
+            clean_value(data.get('notes')),
             data.get('reminderDaysBefore', 7),
             False
         ))
