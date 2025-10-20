@@ -172,13 +172,26 @@ def init_db():
     conn.close()
 
 def parse_date(date_str):
-    """Parse date string in DD-MM-YYYY format to PostgreSQL date"""
+    """Parse date string in multiple formats to PostgreSQL date"""
     if not date_str or date_str == 'N/A':
         return None
-    try:
-        return datetime.strptime(date_str, '%d-%m-%Y').date()
-    except ValueError:
-        return None
+    
+    # Try multiple date formats
+    date_formats = [
+        '%Y-%m-%d',      # ISO format: 2025-10-20 (from frontend date inputs)
+        '%d-%m-%Y',      # DD-MM-YYYY: 20-10-2025 (from CSV)
+        '%Y/%m/%d',      # YYYY/MM/DD
+        '%d/%m/%Y'       # DD/MM/YYYY
+    ]
+    
+    for fmt in date_formats:
+        try:
+            return datetime.strptime(date_str, fmt).date()
+        except ValueError:
+            continue
+    
+    # If no format matches, return None
+    return None
 
 def parse_decimal(value_str):
     """Parse decimal string to float"""
@@ -1552,16 +1565,19 @@ def create_ritual_reminder():
     """Create a new ritual reminder"""
     try:
         data = request.json
+        print(f"Creating ritual with data: {data}")  # Debug log
         
         # Validate required fields
         required_fields = ['familyId', 'ritualType', 'ritualName', 'ritualDate']
         for field in required_fields:
             if not data.get(field):
+                print(f"Missing required field: {field}")  # Debug log
                 return jsonify({'success': False, 'error': f'Missing required field: {field}'}), 400
         
         # Validate ritual type
         valid_types = ['barsi', 'shraad', 'marriage', 'pooja', 'worship', 'kul_devta', 'festival', 'birth', 'death']
         if data['ritualType'] not in valid_types:
+            print(f"Invalid ritual type: {data['ritualType']}")  # Debug log
             return jsonify({'success': False, 'error': 'Invalid ritual type'}), 400
         
         conn = get_db_connection()
@@ -1569,7 +1585,9 @@ def create_ritual_reminder():
         
         # Verify family exists
         cur.execute('SELECT family_line_id FROM family_members WHERE family_line_id = %s LIMIT 1', (data['familyId'],))
-        if not cur.fetchone():
+        family_exists = cur.fetchone()
+        print(f"Family {data['familyId']} exists: {family_exists is not None}")  # Debug log
+        if not family_exists:
             cur.close()
             conn.close()
             return jsonify({'success': False, 'error': 'Family ID not found'}), 400
@@ -1586,6 +1604,15 @@ def create_ritual_reminder():
         # Generate reminder ID
         reminder_id = f"REM{str(uuid.uuid4())[:8].upper()}"
         
+        # Parse the date
+        parsed_date = parse_date(data['ritualDate'])
+        print(f"Parsed date: {data['ritualDate']} -> {parsed_date}")  # Debug log
+        
+        if parsed_date is None:
+            cur.close()
+            conn.close()
+            return jsonify({'success': False, 'error': f'Invalid date format: {data["ritualDate"]}'}), 400
+        
         # Insert ritual reminder
         cur.execute('''
             INSERT INTO ritual_reminders (
@@ -1599,7 +1626,7 @@ def create_ritual_reminder():
             data.get('personId'),
             data['ritualType'],
             data['ritualName'],
-            parse_date(data['ritualDate']),
+            parsed_date,
             data.get('recurring', False),
             data.get('recurrencePattern'),
             data.get('location'),
@@ -1615,6 +1642,7 @@ def create_ritual_reminder():
         cur.close()
         conn.close()
         
+        print(f"✅ Ritual created successfully: {reminder_id}")  # Debug log
         return jsonify({
             'success': True,
             'message': 'Ritual reminder created successfully',
@@ -1622,6 +1650,9 @@ def create_ritual_reminder():
         })
         
     except Exception as e:
+        print(f"❌ Error creating ritual: {str(e)}")  # Debug log
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/rituals/<family_id>', methods=['GET'])
