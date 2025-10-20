@@ -147,7 +147,6 @@ def init_db():
             is_completed BOOLEAN DEFAULT FALSE,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (family_id) REFERENCES family_members(family_line_id) ON DELETE CASCADE,
             FOREIGN KEY (person_id) REFERENCES family_members(person_id) ON DELETE CASCADE
         )
     ''')
